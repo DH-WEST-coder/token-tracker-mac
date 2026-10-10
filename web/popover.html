@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Token Tracker</title>
+<style>
+:root{color-scheme:light dark;--bg:#fff;--card:#f4f4f2;--ink:#1c1c1a;--mut:#77776f;--line:#e2e2de;--claude:#d95926;--codex:#3987e5;--gemini:#199e70;--ok:#199e70;--warn:#e0a400;--hi:#e8730c;--bad:#d93025}
+@media(prefers-color-scheme:dark){:root{--bg:#1e1e1c;--card:#2a2a28;--ink:#f1f1ee;--mut:#9b9b92;--line:#3a3a37}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:13px/1.35 -apple-system,"Helvetica Neue",sans-serif;padding:12px;-webkit-user-select:none}
+h2{font-size:12px;font-weight:600;color:var(--mut);margin:14px 2px 6px;letter-spacing:.02em}
+.tool{background:var(--card);border-radius:10px;padding:10px 12px;margin-bottom:8px}
+.th{display:flex;align-items:center;gap:6px;font-weight:600}.dot{width:9px;height:9px;border-radius:50%}
+.th small{margin-left:auto;color:var(--mut);font-weight:400}
+.w{margin-top:8px}.wr{display:flex;justify-content:space-between;font-size:12px}.wr b{font-variant-numeric:tabular-nums}
+.wr span{color:var(--mut)}
+.bar{height:8px;border-radius:4px;background:var(--line);overflow:hidden;margin-top:3px}.bar i{display:block;height:100%;border-radius:4px}
+.note{color:var(--mut);font-size:12px;margin-top:6px}
+.err{color:var(--bad)}
+.chart{background:var(--card);border-radius:10px;padding:10px 12px}
+.legend{display:flex;gap:10px;font-size:11px;color:var(--mut);margin-top:6px}.legend i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px}
+.kpi{display:flex;gap:8px;margin-top:8px}.kpi div{flex:1;background:var(--card);border-radius:10px;padding:8px 10px}.kpi b{display:block;font-size:15px;font-variant-numeric:tabular-nums}.kpi span{font-size:11px;color:var(--mut)}
+.foot{display:flex;gap:6px;margin-top:12px}button{flex:1;border:0;border-radius:8px;background:var(--card);color:var(--ink);font:inherit;padding:7px 4px;cursor:pointer}button:hover{background:var(--line)}
+</style></head><body>
+<div id="tools">불러오는 중…</div>
+<h2>최근 7일 토큰</h2><div class="chart"><svg id="c" width="100%" height="110"></svg><div class="legend" id="lg"></div></div>
+<div class="kpi" id="kpi"></div>
+<div class="foot"><button data-a="dashboard">대시보드</button><button data-a="refresh">새로고침</button><button data-a="login">자동 실행</button><button data-a="quit">종료</button></div>
+<script>
+const NAME={claude:'Claude',codex:'Codex',gemini:'Gemini'},COL={claude:'var(--claude)',codex:'var(--codex)',gemini:'var(--gemini)'};
+const KNOWN=['five_hour','seven_day','seven_day_opus','seven_day_sonnet','primary','secondary'];
+const $=s=>document.querySelector(s),el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
+const tok=n=>n>=1e9?(n/1e9).toFixed(1)+'B':n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e3?(n/1e3).toFixed(0)+'K':String(Math.round(n));
+const usd=n=>'$'+(n>=100?Math.round(n):n.toFixed(2));
+const lvl=p=>p<50?'var(--ok)':p<75?'var(--warn)':p<90?'var(--hi)':'var(--bad)';
+function reset(ts){if(!ts)return '';const m=Math.max(0,Math.round((ts*1000-Date.now())/60000));return m>=1440?`리셋 ${Math.floor(m/1440)}일 ${Math.floor(m%1440/60)}시간 후`:m>=60?`리셋 ${Math.floor(m/60)}시간 ${m%60}분 후`:`리셋 ${m}분 후`}
+function tools(L,S){const box=$('#tools');box.replaceChildren();
+ for(const k of ['claude','codex','gemini']){const t=L[k];if(!t)continue;const c=el('div','tool');
+  const h=el('div','th');const d=el('i','dot');d.style.background=COL[k];h.append(d,el('span','',NAME[k]),el('small','',t.plan||''));c.append(h);
+  const ws=(t.windows||[]).filter(w=>!w.key||KNOWN.includes(w.key));
+  if(ws.length){for(const w of ws){const p=Math.min(100,w.used_percent);const r=el('div','w');
+    const row=el('div','wr');row.append(el('span','',w.label),el('b','',p.toFixed(0)+'% 사용'));r.append(row);
+    const b=el('div','bar'),i=el('i');i.style.width=p+'%';i.style.background=lvl(p);b.append(i);r.append(b);
+    const rs=reset(w.resets_at);if(rs)r.append(el('div','note',rs));c.append(r)}}
+  else if(k==='gemini'){const td=(S.today||{}).gemini||{tokens:0,cost:0};c.append(el('div','note',`한도 조회 없음 · 오늘 ${tok(td.tokens)} 토큰 (${usd(td.cost)})`))}
+  else c.append(el('div','note','한도 정보 없음'));
+  if(t.status&&t.status!=='ok'&&t.status!=='unsupported'&&t.message)c.append(el('div','note err',t.message));
+  box.append(c)}}
+function chart(S){const D=(S.daily||[]).slice(-7),svg=$('#c');svg.replaceChildren();const W=svg.clientWidth||300,H=110,pb=16,n=D.length||1,bw=W/n;
+ const tot=d=>['claude','codex','gemini'].reduce((a,k)=>a+((d[k]||{}).tokens||0),0),max=Math.max(1,...D.map(tot));
+ const NS='http://www.w3.org/2000/svg',mk=(t,a)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e};
+ D.forEach((d,i)=>{let y=H-pb;for(const k of ['claude','codex','gemini']){const v=(d[k]||{}).tokens||0,h=v/max*(H-pb-14);if(!h)continue;y-=h;
+   const r=mk('rect',{x:i*bw+bw*.18,y,width:bw*.64,height:h,rx:2,fill:getComputedStyle(document.documentElement).getPropertyValue('--'+k).trim()});r.append(mk('title',{}));r.lastChild.textContent=`${d.date} ${NAME[k]} ${tok(v)}`;svg.append(r)}
+  const t=mk('text',{x:i*bw+bw/2,y:H-3,'text-anchor':'middle','font-size':10,fill:getComputedStyle(document.body).getPropertyValue('--mut')});t.textContent=d.date.slice(5);svg.append(t);
+  const tv=tot(d);if(tv){const l=mk('text',{x:i*bw+bw/2,y:y-3,'text-anchor':'middle','font-size':9,fill:getComputedStyle(document.body).getPropertyValue('--mut')});l.textContent=tok(tv);svg.append(l)}});
+ $('#lg').replaceChildren(...['claude','codex','gemini'].map(k=>{const s=el('span');const i=el('i');i.style.background=COL[k];s.append(i,NAME[k]);return s}))}
+function kpi(S){const t=(S.today||{}).all||{tokens:0,cost:0},r=((S.ratio||{}).total)||{};
+ const items=[['오늘',tok(t.tokens)+' · '+usd(t.cost)],['30일 API 환산',usd(r.api_cost_usd||0)],['쌀먹 배율',r.ratio!=null?r.ratio.toFixed(1)+'x':'-']];
+ $('#kpi').replaceChildren(...items.map(([a,b])=>{const d=el('div');d.append(el('b','',b),el('span','',a));return d}))}
+async function load(){try{const [L,S]=await Promise.all([fetch('/api/limits').then(r=>r.json()),fetch('/api/stats?days=7').then(r=>r.json())]);tools(L,S);chart(S);kpi(S)}catch(e){$('#tools').textContent='불러오는 중… (백엔드 준비 대기)';setTimeout(load,3000)}}
+document.addEventListener('click',e=>{const b=e.target.closest('button[data-a]');if(b&&window.webkit)window.webkit.messageHandlers.act.postMessage(b.dataset.a)});
+load();setInterval(load,30000);window.reload=load;
+</script></body></html>

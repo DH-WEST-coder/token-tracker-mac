@@ -40,7 +40,9 @@ struct ToolLimits: Decodable {
 
 typealias Limits = [String: ToolLimits]
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDelegate, WKScriptMessageHandler {
+    private var popover: NSPopover?
+    private var popoverView: WKWebView?
     private let tools = [("claude", "Claude", "C"), ("codex", "Codex", "X"), ("gemini", "Gemini", "G")]
     private var statusItem: NSStatusItem!
     private let menu = NSMenu()
@@ -74,7 +76,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         statusItem.button?.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
         menu.autoenablesItems = false
         menu.delegate = self
-        statusItem.menu = menu
+        if let button = statusItem.button {
+            button.target = self
+            button.action = #selector(statusClicked)
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        }
         rebuildMenu()
         installTerminationHandlers()
         timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in self?.fetchLimits() }
@@ -253,6 +259,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
         menu.addItem(.separator())
         _ = item("종료", action: #selector(quit))
+    }
+
+    @objc private func statusClicked() {
+        guard let button = statusItem.button else { return }
+        let event = NSApp.currentEvent
+        if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
+            rebuildMenu()
+            statusItem.menu = menu
+            button.performClick(nil)
+            statusItem.menu = nil
+            return
+        }
+        if let popover = popover, popover.isShown { popover.performClose(nil); return }
+        if popover == nil {
+            let config = WKWebViewConfiguration()
+            config.userContentController.add(self, name: "act")
+            let view = WKWebView(frame: NSRect(x: 0, y: 0, width: 340, height: 640), configuration: config)
+            view.setValue(false, forKey: "drawsBackground")
+            let controller = NSViewController()
+            controller.view = view
+            let pop = NSPopover()
+            pop.contentViewController = controller
+            pop.contentSize = NSSize(width: 340, height: 640)
+            pop.behavior = .transient
+            popover = pop
+            popoverView = view
+        }
+        popoverView?.load(URLRequest(url: baseURL.appendingPathComponent("popover")))
+        popover?.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        switch message.body as? String {
+        case "dashboard": popover?.performClose(nil); openDashboard()
+        case "refresh": refreshNow(); popoverView?.evaluateJavaScript("setTimeout(load,1500)")
+        case "login": toggleLogin()
+        case "quit": quit()
+        default: break
+        }
     }
 
     @objc private func openDashboard() {

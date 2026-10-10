@@ -32,6 +32,8 @@ def make_handler(engine):
             q = parse_qs(u.query)
             if u.path in ("/", "/index.html"):
                 return self._send(200, (WEB / "dashboard.html").read_bytes(), "text/html; charset=utf-8")
+            if u.path == "/popover":
+                return self._send(200, (WEB / "popover.html").read_bytes(), "text/html; charset=utf-8")
             if u.path == "/d3.v7.min.js":
                 return self._send(200, (WEB / "d3.v7.min.js").read_bytes(), "text/javascript; charset=utf-8")
             if u.path == "/api/data":
